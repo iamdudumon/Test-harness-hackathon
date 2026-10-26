@@ -7,6 +7,17 @@ rm -rf src/main/java/* src/test/java/* .agents/rules/* .agents/skills/* docs/*
 rm -f src/main/resources/application.properties build.gradle.kts
 mkdir -p .agents/rules .agents/workflows docs scripts logs data src/main/resources src/main/java/com/hackathon/app/common src/main/java/com/hackathon/app/sample
 
+# gradlew가 없는 빈 디렉터리 대응: 시스템 gradle이 있으면 wrapper를 자동 생성
+if [ ! -f ./gradlew ]; then
+  if command -v gradle >/dev/null 2>&1; then
+    echo "⚙️ ./gradlew가 없어 시스템 gradle로 wrapper(8.10.2)를 생성합니다..."
+    [ -f settings.gradle ] || [ -f settings.gradle.kts ] || echo "rootProject.name = 'hackathon-app'" > settings.gradle
+    gradle wrapper --gradle-version 8.10.2 -q || echo "⚠️ wrapper 자동 생성에 실패했습니다. IntelliJ로 Gradle 프로젝트를 먼저 생성하세요."
+  else
+    echo "⚠️ ./gradlew와 gradle 명령어가 모두 없습니다. IntelliJ로 Gradle 프로젝트를 먼저 생성하세요."
+  fi
+fi
+
 cat << 'EOF_HARNESS_FILE' > "GEMINI.md"
 # Solo Hackathon Harness — Spring Boot 3 (Java 21)
 
@@ -438,7 +449,7 @@ cat << 'EOF_HARNESS_FILE' > "scripts/verify-fast.sh"
 set -euo pipefail
 
 echo "🔍 [1/3] 금지된 JPA 연관관계 및 Security 의존성 정적 검사 중..."
-if grep -rnE "@(OneToMany|ManyToOne|OneToOne|ManyToMany|JoinColumn|ElementCollection)" src/main/java/ 2>/dev/null; then
+if grep -rnE "^[[:space:]]*@(OneToMany|ManyToOne|OneToOne|ManyToMany|JoinColumn|ElementCollection)" src/main/java/ 2>/dev/null; then
   echo "❌ [규칙 위반] JPA 연관관계/조인 어노테이션이 감지되었습니다! 단순 ID 필드(Long xxxId)로 변경하세요."
   exit 1
 fi
@@ -454,7 +465,7 @@ if find src/main/java/ -name "*ServiceImpl.java" | grep -q .; then
   exit 1
 fi
 
-if grep -rnE "@(Data|Builder)" src/main/java/ 2>/dev/null; then
+if grep -rnE "^[[:space:]]*@(Data|Builder)" src/main/java/ 2>/dev/null; then
   echo "❌ [규칙 위반] @Data 또는 @Builder가 감지되었습니다! Entity는 @Getter/@Setter, DTO는 Java 21 record를 사용하세요."
   exit 1
 fi
@@ -675,7 +686,7 @@ import java.time.LocalDateTime;
 
 /**
  * [골든 샘플 Entity]
- * - JPA 연관관계(@ManyToOne 등)를 절대 사용하지 않고 ownerId처럼 단순 Long 값으로 참조합니다.
+ * - JPA 연관관계(ManyToOne 등)를 절대 사용하지 않고 ownerId처럼 단순 Long 값으로 참조합니다.
  */
 @Entity
 @Table(name = "sample_items")

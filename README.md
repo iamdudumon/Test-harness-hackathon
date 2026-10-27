@@ -14,7 +14,7 @@
 2. **골든 샘플 복제 기반의 일관된 코드 생성 (Golden Sample Pattern)**
    - 에이전트가 매번 다른 패키지 구조나 어노테이션을 혼용하지 않도록, 완벽히 동작하는 표준 CRUD(`GET`/`POST`/`PUT`/`DELETE`) 1세트(`sample/` 패키지)를 **골든 샘플**로 제공하고 모든 신규 도메인을 이 패턴 그대로 복제해 구현하도록 유도합니다.
 3. **에이전트 자율 검증 및 자가 치유 루프 (Closed-Loop Verification)**
-   - 에이전트가 코드만 작성하고 검증을 사람에게 떠넘기지 않도록 **1~2초 초고속 컴파일 및 정적 규칙 검사(`verify-fast.sh`) → 8080 포트 좀비 프로세스 정리 및 재기동(`server-ctl.sh`) → 실제 API 호출 테스트(`smoke-test.sh`) → 에러 발생 위치(`파일명:줄번호`) 자동 역추적**까지 스스로 수행하게 만듭니다.
+   - 에이전트가 코드만 작성하고 검증을 사람에게 떠넘기지 않도록 **정적 규칙 검사 및 고속 컴파일(`verify-fast.sh`, 캐시 히트 시 1~2초 · 코드 변경 시 수 초) → 8080 포트 Java 좀비 프로세스 안전 정리 및 재기동(`server-ctl.sh`) → 실제 API 호출 테스트(`smoke-test.sh`) → 에러 발생 위치(`파일명:줄번호`) 자동 역추적**까지 스스로 수행하게 만듭니다.
 4. **심사위원 데모 시연 최우선 설계 (Demo-First Architecture)**
    - 별도 DB 설치 없이도 서버 재시작 후 데이터가 유지되는 **H2 로컬 파일 모드(`./data/hackathon-db`)**, 서버 기동 시 데모용 더미 데이터를 자동 삽입하는 **`DataInitializer`**, 프론트엔드 없이도 브라우저에서 즉시 시연 가능한 **한글 Swagger UI(`/swagger`)**를 기본 내장했습니다.
 
@@ -28,8 +28,8 @@ v1.1에서는 에이전트의 컨텍스트 토큰 낭비를 줄이기 위해 중
 | :--- | :--- | :--- |
 | **① 에이전트 규칙 계층** | `GEMINI.md`<br>`.agents/rules/core-rules.md` | • 중복 문서를 압축하여 매 턴 소모되는 시스템 프롬프트 토큰 절감<br>• JPA 연관관계, `Spring Security`, `*ServiceImpl`, Lombok `@Data`/`@Builder` 전면 금지<br>• 평면 패키지(`com.hackathon.app.<도메인>`), `/api/v1/케밥-케이스`, 한글 Swagger 강제 |
 | **② 슬래시 워크플로우** | `.agents/workflows/spec.md` (`/spec`)<br>`.agents/workflows/implement-api.md` (`/implement-api`)<br>`.agents/workflows/debug-runtime.md` (`/debug-runtime`)<br>`.agents/workflows/handoff.md` (`/handoff`) | • `/spec`: 아이디어를 통합 설계·태스크 보드(`docs/PLAN.md`) 한 파일로 분해<br>• `/implement-api`: 골든 샘플 복제 → 시딩 추가 → 검증 → 서버 재기동 → 스모크 테스트(실패 시 자가 수정) → 커밋 원스톱 자동화<br>• `/debug-runtime`: `logs/server.log` 및 `error.location` 기반 런타임 에러 자가 복구<br>• `/handoff`: 대화창 컨텍스트 과부하 방지를 위한 세션 상태 스냅샷 인계 |
-| **③ 고속 검증 & 제어기** | `scripts/verify-fast.sh`<br>`scripts/server-ctl.sh`<br>`scripts/smoke-test.sh`<br>`scripts/checkpoint.sh` | • `verify-fast.sh`: 금지 어노테이션·Security 의존성 적발 및 1~2초 내 컴파일 체크<br>• `server-ctl.sh`: Windows(Git Bash) & Mac/Linux 호환 8080 포트 좀비 프로세스 강제 종료 및 백그라운드 기동·Health 폴링<br>• `checkpoint.sh`: 커밋 접두사(`feat:` 등) 자동 보정 및 작업 상태 감지형 스마트 롤백(`--rollback`) |
-| **④ 공통 인프라 모듈** | `common/ApiResponse.java`<br>`common/GlobalExceptionHandler.java`<br>`common/DataInitializer.java`<br>`common/CorsConfig.java`<br>`common/OpenApiConfig.java` | • `ApiResponse`: `@JsonInclude(NON_NULL)` 기반의 깔끔한 공통 응답 래퍼<br>• `GlobalExceptionHandler`: 에러 발생 시 프로젝트 내부 파일명·줄번호(`location`)를 JSON으로 반환해 에이전트 즉시 수정 지원<br>• `DataInitializer`: DB가 비어 있으면 시연용 초기 데이터를 자동 시딩<br>• `CorsConfig`: 웹/모바일 프론트엔드 연동 시 모든 CORS 에러 사전 차단 |
+| **③ 고속 검증 & 제어기** | `scripts/verify-fast.sh`<br>`scripts/server-ctl.sh`<br>`scripts/smoke-test.sh`<br>`scripts/checkpoint.sh` | • `verify-fast.sh`: 금지 어노테이션·Security 의존성 적발 및 Gradle Daemon 컴파일 체크(캐시 히트 시 1~2초, 코드 변경 시 수 초)<br>• `server-ctl.sh`: Windows(Git Bash) & Mac/Linux 호환. 8080 포트를 점유한 **Java 프로세스만** 종료(무관한 프로세스는 건너뜀)하고 백그라운드 기동·Health 폴링(최대 60초), `PORT` 환경변수로 포트 변경 가능<br>• `checkpoint.sh`: 커밋 접두사(`feat:` 등) 자동 보정 및 작업 상태 감지형 스마트 롤백(`--rollback`, 롤백 직전 stash/태그 자동 백업) |
+| **④ 공통 인프라 모듈** | `common/ApiResponse.java`<br>`common/GlobalExceptionHandler.java`<br>`common/DataInitializer.java`<br>`common/CorsConfig.java`<br>`common/OpenApiConfig.java` | • `ApiResponse`: `@JsonInclude(NON_NULL)` 기반의 깔끔한 공통 응답 래퍼<br>• `GlobalExceptionHandler`: 에러 발생 시 프로젝트 내부 파일명·줄번호(`location`)를 JSON으로 반환해 에이전트 즉시 수정 지원(404/405/415·잘못된 JSON 등 클라이언트 오류는 500이 아닌 원래의 4xx로 응답, 앱 코드 위치가 없으면 `location` 생략)<br>• `DataInitializer`: DB가 비어 있으면 시연용 초기 데이터를 자동 시딩<br>• `CorsConfig`: 웹/모바일 프론트엔드 연동 시 모든 CORS 에러 사전 차단 |
 | **⑤ 골든 샘플 템플릿** | `sample/SampleItem.java`<br>`sample/SampleItemRepository.java`<br>`sample/SampleItemService.java`<br>`sample/SampleItemController.java` | • 에이전트가 신규 도메인 코드를 작성할 때 그대로 참고·복제하는 표준 CRUD(`GET` 목록/단건, `POST` 생성, `PUT` 더티 체킹 수정, `DELETE` 삭제) 레퍼런스 |
 
 ---
@@ -42,6 +42,9 @@ v1.1에서는 에이전트의 컨텍스트 토큰 낭비를 줄이기 위해 중
 ```bash
 curl -fsSL https://raw.githubusercontent.com/iamdudumon/Test-harness-hackathon/main/bootstrap-harness.sh | bash
 ```
+
+> ⚠️ **덮어쓰기 보호**: 이미 하네스가 설치된 프로젝트(`docs/PLAN.md` 또는 `common/`·`sample/` 패키지 존재)에서 다시 실행하면 작성 중인 코드와 `docs/`가 삭제되므로 스크립트가 경고 후 중단합니다. 정말 덮어쓰려면 `curl -fsSL <URL> | FORCE=1 bash` 또는 `FORCE=1 ./bootstrap-harness.sh`로 실행하세요.  
+> `./gradlew`가 없는 빈 폴더라면 시스템에 `gradle`이 있을 때 wrapper(8.10.2)를 자동 생성합니다.
 
 3. IntelliJ 우측 상단의 **Load Gradle Changes(코끼리 아이콘)**를 눌러 의존성을 동기화합니다.
 4. 터미널에서 초기 검증 및 서버 기동을 한 번 실행해 정상 동작을 확인합니다:
@@ -71,9 +74,9 @@ Antigravity 채팅창에 만들고 싶은 서비스 아이디어를 입력합니
 - 에이전트가 `docs/PLAN.md`의 다음 미완료 항목(`[ ]`) 1개를 읽고 아래 과정을 자율적으로 완수합니다:
   1. `sample/` 골든 샘플을 복제하여 신규 도메인(`Entity`, `Repository`, `Service` + `record` DTO, `Controller`) 작성
   2. `DataInitializer.java`에 데모 시연용 초기 데이터 3건 이상 추가
-  3. `./scripts/verify-fast.sh`로 금지 패턴 및 컴파일 에러 2초 내 검증
+  3. `./scripts/verify-fast.sh`로 금지 패턴 및 컴파일 에러 고속 검증(변경이 없으면 1~2초, 코드 수정 시 수 초)
   4. `./scripts/server-ctl.sh restart`로 좀비 프로세스 정리 후 서버 재기동
-  5. `./scripts/smoke-test.sh`로 실제 API 호출 검증 *(에러 발생 시 로그와 `error.location`을 읽고 스스로 수정 후 재검증)*
+  5. `./scripts/smoke-test.sh`로 실제 API 호출 검증(조회는 `GET`, 생성·수정·삭제는 `POST|PUT|DELETE` + JSON 본문) *(에러 발생 시 로그와 `error.location`을 읽고 스스로 수정 후 재검증)*
   6. `docs/PLAN.md` 진행 상태 갱신 및 `./scripts/checkpoint.sh`로 Git 커밋 완료
 - 완료 보고를 받으면 브라우저에서 `http://localhost:8080/swagger`를 열어 한글로 정리된 API를 즉시 테스트합니다.
 
@@ -100,16 +103,17 @@ Antigravity 채팅창에 만들고 싶은 서비스 아이디어를 입력합니
 
 | 명령어 | 동작 설명 |
 | :--- | :--- |
-| `./scripts/verify-fast.sh` | • 금지 어노테이션(`@ManyToOne`, `@JoinColumn`, `@Data` 등), `*ServiceImpl`, Security 의존성 적발<br>• Gradle Daemon 기반 1~2초 초고속 Java 컴파일 체크 |
-| `./scripts/server-ctl.sh start` | • 8080 포트 점유 프로세스 확인 후 백그라운드로 Spring Boot 기동 및 `/actuator/health` 폴링 |
-| `./scripts/server-ctl.sh restart` | • 기존 8080 좀비 프로세스 강제 종료(`lsof`/`fuser`/`netstat+taskkill`) 및 H2 `.lock.db` 정리 후 재기동 |
+| `./scripts/verify-fast.sh` | • 금지 어노테이션(`@ManyToOne`, `@JoinColumn`, `@Data` 등), `*ServiceImpl`, Security 의존성 적발<br>• Gradle Daemon 기반 Java 컴파일 체크 (캐시 히트 시 1~2초, 코드 변경 시 수 초, 첫 실행은 10초 이상 걸릴 수 있음) |
+| `./scripts/server-ctl.sh start` | • 8080 포트 점유 확인 후 백그라운드로 Spring Boot 기동 및 `/actuator/health` 폴링(최대 60초). 다른 포트는 `PORT=8081 ./scripts/server-ctl.sh start` |
+| `./scripts/server-ctl.sh restart` | • 8080을 LISTEN 중인 **Java 프로세스만** 종료(`lsof`/`fuser`/`netstat+taskkill`, 종료 대상 PID·이름 출력)하고 H2 `.lock.db` 정리 후 재기동. Java가 아닌 프로세스가 점유 중이면 건드리지 않고 `PORT=` 변경을 안내 (같은 프로젝트에서 두 포트를 동시에 띄우는 용도는 아님: Gradle 빌드 락으로 대기함) |
 | `./scripts/server-ctl.sh stop` | • 실행 중인 백그라운드 서버 종료 및 포트 반환 |
 | `./scripts/server-ctl.sh status` | • 현재 8080 서버 실행 여부 및 PID 상태 확인 |
 | `./scripts/server-ctl.sh logs` | • `./logs/server.log`의 최근 50줄 즉시 출력 |
 | `./scripts/server-ctl.sh reset-db` | • 서버 중지 → `./data/hackathon-db*` 파일 삭제 → 서버 재기동 및 `DataInitializer` 초기 데이터 재시딩 |
 | `./scripts/smoke-test.sh [경로]` | • 지정한 경로(기본값 `/api/v1/samples`)로 `GET` 요청을 보내 2xx 응답 확인 (실패 시 서버 로그 자동 출력) |
+| `./scripts/smoke-test.sh METHOD 경로 'JSON'` | • `POST`/`PUT`/`PATCH`/`DELETE` 지원. 예: `./scripts/smoke-test.sh POST /api/v1/samples '{"title":"a","category":"b","ownerId":1}'` |
 | `./scripts/checkpoint.sh "메시지"` | • 커밋 접두사(`feat:`, `fix:`, `seed:`, `chore:`) 자동 보정 후 Git 체크포인트 커밋 생성 |
-| `./scripts/checkpoint.sh --rollback` | • **스마트 롤백**: 작업 중 미커밋 파일이 있으면 `HEAD`로 초기화하고, 이미 커밋한 직후라면 `HEAD~1`로 복구 |
+| `./scripts/checkpoint.sh --rollback` | • **스마트 롤백(비대화형)**: 작업 중 미커밋 파일이 있으면 미추적 파일까지 `git stash -u`(`rollback-backup-<시각>`)로 백업한 뒤 `HEAD` 상태로 복구하고, 이미 커밋한 직후라면 백업 태그(`rollback-backup-<시각>`)를 남기고 `HEAD~1`로 복구. 복원: `git stash pop` 또는 `git reset --hard <백업 태그>` |
 
 ---
 
@@ -131,7 +135,9 @@ Antigravity 채팅창에 만들고 싶은 서비스 아이디어를 입력합니
 }
 ```
 
-### ❌ 에러 응답 예시 (`400 Bad Request` / `500 Internal Server Error`)
+### ❌ 에러 응답 예시 (`400 Bad Request` / `404` / `405` / `415` / `500`)
+클라이언트 오류(없는 경로 `404`, 지원하지 않는 메서드 `405`, 잘못된 Content-Type `415`, 깨진 JSON·타입 불일치·필수 파라미터 누락 `400`)는 `log.warn` 한 줄만 남기고 원래의 4xx 상태코드로 응답하며, 진짜 서버 오류만 `500`과 스택트레이스를 남깁니다. 앱 코드 위치를 특정할 수 없는 경우 `location` 필드는 응답에서 생략됩니다.
+
 `GlobalExceptionHandler`가 스택트레이스 중 `com.hackathon.app` 패키지 내부에서 발생한 위치만 추출하여 `error.location`에 담아 반환하므로, 에이전트가 수백 줄의 로그를 뒤지지 않고도 문제의 파일과 줄 번호를 즉시 찾아 수정합니다.
 ```json
 {
@@ -164,13 +170,13 @@ Antigravity 채팅창에 만들고 싶은 서비스 아이디어를 입력합니
 ├── docs/
 │   └── PLAN.md                        # [단일 진실 공급원] 세션 상태 + 엔티티/API 명세 + 태스크 보드
 ├── scripts/
-│   ├── verify-fast.sh                 # 1~2초 초고속 컴파일 & 금지 어노테이션/Security 정적 검사
-│   ├── server-ctl.sh                  # Cross-Platform(Win/Mac/Linux) 8080 좀비 정리 & 서버 제어
-│   ├── smoke-test.sh                  # 로컬 API curl 스모크 호출 및 에러 로그 자동 출력
-│   └── checkpoint.sh                  # 커밋 접두사 자동 보정 & 상태 감지형 롤백(--rollback)
+│   ├── verify-fast.sh                 # 금지 어노테이션/Security 정적 검사 & Gradle Daemon 고속 컴파일
+│   ├── server-ctl.sh                  # Cross-Platform(Win/Mac/Linux) Java 좀비 안전 정리 & 서버 제어 (PORT 변경 가능)
+│   ├── smoke-test.sh                  # 로컬 API curl 스모크 호출(GET/POST/PUT/DELETE) 및 에러 로그 자동 출력
+│   └── checkpoint.sh                  # 커밋 접두사 자동 보정 & 백업 후 롤백(--rollback)
 └── src/main/
     ├── resources/
-    │   └── application.yml            # H2 로컬 파일 DB + 한글 Swagger(/swagger) + 파일 로깅
+    │   └── application.yml            # H2 로컬 파일 DB + 한글 Swagger(/swagger) + 파일 로깅 (H2 콘솔은 localhost 전용)
     └── java/com/hackathon/app/
         ├── HackathonApplication.java  # Spring Boot 메인 애플리케이션
         ├── common/
